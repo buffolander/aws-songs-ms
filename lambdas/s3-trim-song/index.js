@@ -1,26 +1,29 @@
-'use strict'
-const AWS = require('aws-sdk')
 const ffmpeg = require('fluent-ffmpeg')
-
 const fs = require('fs')
+
+const { objectCRUD } = require('../../clients/aws-s3')
+
+const {
+  TRIM_SONG_LENGTH = 5,
+} = process.env
 
 const probeFile = (input) => (new Promise((resolve, reject) => {
   ffmpeg(input)
-    .ffprobe((err, metadata) => resolve(err ? err : metadata.streams))
+    .ffprobe((err, metadata) => resolve(err || metadata.streams))
 }))
 
 const trimFile = (input, output) => (new Promise((resolve, reject) => {
   ffmpeg(input)
     .format('mp3')
     .output(output)
-    .inputOptions(`-t ${process.env.TRIM_SONG_LENGTH}`)
+    .inputOptions(`-t ${TRIM_SONG_LENGTH}`)
     .on('error', err => reject(err))
     .on('start', cmd => console.info(cmd))
     .on('end', () => resolve(fs.createReadStream(output)))
     .run()
 }))
 
-const handler = async (event) => {
+const handler = async (event, context) => {
   const {
     s3: {
       bucket: {
@@ -33,33 +36,33 @@ const handler = async (event) => {
   } = event.Records[0]
   if (!bucketName || !fileKey) return
 
-  const storage = new AWS.S3()
-  const originalObjectParams = {
-    Bucket: bucketName,
-    Key: fileKey,
-  }
-  const fileName = fileKey.split('upload/')[1]
-  const inputLocal = `/tmp/raw-${fileName}`
-  const outputLocal = `/tmp/trimmed-${fileName}`
-  const uploadKey = `trimmed/${fileName}`
+  const filename = fileKey.split('upload/')[1]
+  const uploadKey = `trimmed/${filename}`
+  const localInput = `/tmp/raw-${filename}`
+  const localOutput = `/tmp/trimmed-${filename}`
 
   try {
-    const inputBuffer = await storage.getObject(originalObjectParams).promise()
-    fs.writeFileSync(inputLocal, inputBuffer.Body)
+    const inputBuffer = await objectCRUD('getObject', {
+      Key: fileKey,
+    })
+    if (!inputBuffer) throw { error: 'null inputBuffer', event }
 
-    /* const fileDetails = await probeFile(inputLocal)
+    fs.writeFileSync(localInput, inputBuffer.Body)
+
+    /* const fileDetails = await probeFile(localInput)
     console.info(fileDetails) */
-    const trimRes = await trimFile(inputLocal, outputLocal)
+    const streamReader = await trimFile(localInput, localOutput)
 
-    await storage.putObject({
-      Bucket: bucketName,
+    await objectCRUD('putObject', {
       Key: uploadKey,
-      Body: trimRes,
-    }).promise()
-    await storage.deleteObject(originalObjectParams).promise()
+      Body: streamReader,
+    })
+    await objectCRUD('deleteObject', {
+      Key: fileKey,
+    })
   } catch (err) {
     console.error(err)
   }
 }
 
-module.exports = { handler }
+module.exports = { handler, trimFile }

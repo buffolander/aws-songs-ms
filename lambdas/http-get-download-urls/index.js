@@ -1,30 +1,22 @@
-'use strict'
-const AWS = require('aws-sdk')
+const { listObjects, signURL } = require('../../clients/aws-s3')
 
 const {
-  AWS_DEFAULT_REGION,
-  DEFAULT_BUCKET,
-  SIGNED_URL_MAX_AGE,
+  FILEKEY_PREFIX_TRIMMED: prefix,
 } = process.env
 
-const PREFIX = 'trimmed/'
-
-const handler = async (event) => {
-  const storage = new AWS.S3()
+const handler = async (event, context) => {
   try {
-    const { Contents: fileDetails } = await storage.listObjects({
-      Bucket: DEFAULT_BUCKET,
-      Prefix: PREFIX,
-    }).promise()
-    console.info(fileDetails)
-    const signedURLs = fileDetails.map(({ Key }) => ({
-      filename: Key.replace(PREFIX, ''),
-      signed_url: storage.getSignedUrl('getObject', {
-        Bucket: DEFAULT_BUCKET,
-        Expires: Number(SIGNED_URL_MAX_AGE),
-        Key,
-      })
-    }))
+    const { Contents: fileDetailsArray } = await listObjects({ Prefix: prefix })
+
+    const signedURLs = fileDetailsArray.map((file) => {
+      const signedURL = signURL('getObject', { Key: file.Key })
+      if (!signedURL) throw new Error({ error: 'null signedURL', fileDetailsArray })
+      return {
+        filename: file.Key.replace(prefix, ''),
+        signed_url: signedURL,
+      }
+    })
+
     return {
       statusCode: 200,
       body: JSON.stringify({

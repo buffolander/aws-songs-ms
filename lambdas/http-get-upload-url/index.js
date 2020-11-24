@@ -1,24 +1,21 @@
-'use strict'
-const AWS = require('aws-sdk')
+const { signURL } = require('../../clients/aws-s3')
 
 const {
-  AWS_DEFAULT_REGION,
-  DEFAULT_BUCKET,
-  SIGNED_URL_MAX_AGE,
+  FILEKEY_PREFIX_UPLOAD: prefix,
 } = process.env
 
-module.exports.handler = async (event) => {
-  const storage = new AWS.S3({ signatureVersion: 'v4', region: AWS_DEFAULT_REGION })
-  const signedURL = storage.getSignedUrl('putObject', {
-    Bucket: DEFAULT_BUCKET,
-    Key: 'upload/song-' + Date.now() + '.mp3',
-    Expires: Number(SIGNED_URL_MAX_AGE),
-  })
+module.exports.handler = async (event, context) => {
+  const signedURL = signURL('putObject', { Key: `${prefix}song-${Date.now()}.mp3` })
+  if (!signedURL) return {
+    statusCode: 500,
+  }
   return {
     statusCode: 200,
     body: JSON.stringify({
       ok: true,
-      signed_url: signedURL,
+      data: {
+        signed_url: signedURL,
+      },
     }),
   }
 }
