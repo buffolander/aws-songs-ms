@@ -1,0 +1,82 @@
+service: songs-ms
+
+frameworkVersion: "2"
+
+custom:
+  defaultBucket: ${self:provider.stage}-song-vault
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  stage: ${opt:stage, 'dev'}
+  region: us-east-1
+  apiGateway:
+    shouldStartNameWithService: true
+  environment:
+    DEFAULT_BUCKET: ${self:custom.defaultBucket}
+    SIGNED_URL_MAX_AGE: 3600
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - "s3:PutObject"
+        - "s3:GetObject"
+      Resource: "arn:aws:s3:::${self:custom.defaultBucket}/*"
+    - Effect: Allow
+      Action:
+        - "s3:ListBucket"
+      Resource: "arn:aws:s3:::${self:custom.defaultBucket}"
+
+package:
+  individually: true
+  exclude:
+    - README.md
+    - .nvmrc
+    - .github
+    - .eslintrc
+    - tests/**
+    - config/**
+    - package.json
+    - package-lock.json
+
+functions:
+  http-get-upload-url:
+    handler: lambdas/http-get-upload-url/index.handler
+    events:
+      - http:
+          path: songs/upload-url
+          method: get
+  http-get-download-urls:
+    handler: lambdas/http-get-download-urls/index.handler
+    events:
+      - http:
+          path: songs/download-urls
+          method: get
+  s3-trim-song:
+    handler: lambdas/s3-trim-song/index.handler
+    timeout: 30
+    memorySize: 3008
+    events:
+      - s3:
+          bucket: ${self:custom.defaultBucket}
+          event: s3:ObjectCreated:*
+          rules:
+            - prefix: upload/
+            - suffix: .mp3
+    layers:
+      - { Ref: FfmpegLambdaLayer }
+    environment:
+      FFMPEG_PATH: "/opt/ffmpeg/ffmpeg"
+      FFPROBE_PATH: "/opt/ffmpeg/ffprobe"
+      TRIM_SONG_LENGTH: 5
+layers:
+  ffmpeg:
+    path: layers
+    name: ffmpeg
+    description: FFMPEG for AWS Lambda
+    compatibleRuntimes:
+      - nodejs12.x
+      - python3.6
+      - ruby2.5
+      - java8
+      - go1.x
+    licenseInfo: GPL-2.0-or-later
