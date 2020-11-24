@@ -14,12 +14,15 @@ provider:
     shouldStartNameWithService: true
   environment:
     DEFAULT_BUCKET: ${self:custom.defaultBucket}
+    FILEKEY_PREFIX_UPLOAD: "upload/"
+    FILEKEY_PREFIX_TRIMMED: "trimmed/"
     SIGNED_URL_MAX_AGE: 3600
   iamRoleStatements:
     - Effect: Allow
       Action:
-        - "s3:PutObject"
+        - "s3:DeleteObject"
         - "s3:GetObject"
+        - "s3:PutObject"
       Resource: "arn:aws:s3:::${self:custom.defaultBucket}/*"
     - Effect: Allow
       Action:
@@ -34,6 +37,7 @@ package:
     - .github
     - .eslintrc
     - tests/**
+    - __tests__/**
     - config/**
     - package.json
     - package-lock.json
